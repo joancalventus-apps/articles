@@ -1,6 +1,5 @@
 import streamlit as st
 import PyPDF2
-import spacy
 import networkx as nx
 import pandas as pd
 from collections import Counter, defaultdict
@@ -10,13 +9,6 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import io
-
-# Cargar modelo spaCy español
-@st.cache_resource
-def load_nlp():
-    return spacy.load("es_core_news_sm")
-
-nlp = load_nlp()
 
 class PDFAnalyzer:
     def __init__(self):
@@ -33,27 +25,20 @@ class PDFAnalyzer:
         return text
     
     def extract_key_concepts(self, text, top_n=20):
-        """Extrae conceptos clave usando TF-IDF + entidades NER"""
-        doc = nlp(text)
+        """Extrae conceptos SIN spaCy usando regex + TF-IDF"""
+        # Palabras clave con regex español (sustantivos, entidades)
+        words = re.findall(r'\b[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]{3,}(?:\s+[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]{2,})?\b', text.lower())
+        common_words = Counter(words).most_common(30)
         
-        # Entidades nombradas
-        entities = [ent.text.lower() for ent in doc.ents 
-                   if ent.label_ in ['PER', 'ORG', 'LOC', 'MISC']]
-        
-        # Sustantivos compuestos (términos técnicos)
-        nouns = [chunk.text.lower() for chunk in doc.noun_chunks 
-                if len(chunk.text.split()) <= 4]
-        
-        # TF-IDF sobre oraciones
-        sentences = [sent.text for sent in doc.sents]
-        vectorizer = TfidfVectorizer(max_features=top_n, stop_words='spanish', 
-                                   ngram_range=(1,3))
+        # TF-IDF en oraciones
+        sentences = re.split(r'[.!?]+', text)
+        vectorizer = TfidfVectorizer(max_features=top_n, stop_words='spanish', ngram_range=(1,3))
         tfidf_matrix = vectorizer.fit_transform(sentences)
         feature_names = vectorizer.get_feature_names_out()
         
         return {
-            'entities': Counter(entities).most_common(15),
-            'nouns': Counter(nouns).most_common(15),
+            'entities': common_words[:15],
+            'nouns': common_words[15:30],
             'tfidf': [(name, score) for name, score in 
                      zip(feature_names, tfidf_matrix.mean(axis=0).A1)]
         }
@@ -143,7 +128,7 @@ def main():
                 st.dataframe(tfidf_df.head(10))
             
             with col2:
-                st.markdown("### **Entidades Nombradas**")
+                st.markdown("### **Entidades/Términos Frecuentes**")
                 entities_df = pd.DataFrame(concepts['entities'], 
                                          columns=['Entidad', 'Frecuencia'])
                 st.dataframe(entities_df.head(10))
@@ -235,7 +220,7 @@ def main():
         """)
     
     st.sidebar.markdown("---")
-    st.sidebar.caption("💻 Para desarrollo local:\n`pip install streamlit PyPDF2 spacy networkx scikit-learn plotly matplotlib`\n`python -m spacy download es_core_news_sm`")
+    st.sidebar.caption("💻 Funciona 100% en Streamlit Cloud")
 
 if __name__ == "__main__":
     main()
